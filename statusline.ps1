@@ -85,6 +85,29 @@ for ($i = 0; $i -lt $cols.Count; $i++) {
     }
 }
 
+# Update check: only when this script lives in a git clone with an upstream.
+# Fetches in the background at most every 6 hours (never pulls) and just compares commits.
+# Opt out with the STATUSLINE_NO_UPDATE_CHECK environment variable.
+function Get-UpdateNotice {
+    if ($env:STATUSLINE_NO_UPDATE_CHECK -or -not (Get-Command git -ErrorAction SilentlyContinue)) { return "" }
+    $dir = $PSScriptRoot
+    $gitDir = git -C $dir rev-parse --absolute-git-dir 2>$null
+    if (-not $gitDir) { return "" }
+    $stamp = Join-Path $gitDir "statusline-update-check"
+    $item = Get-Item $stamp -ErrorAction SilentlyContinue
+    if (-not $item -or ((Get-Date) - $item.LastWriteTime).TotalHours -ge 6) {
+        [IO.File]::WriteAllText($stamp, "")   # stamp first so parallel refreshes don't pile up fetches
+        # Launched via WMI so the fetch is fully detached: a child started with Start-Process
+        # inherits our stdout pipe and Claude Code would wait for it to finish.
+        $null = Invoke-CimMethod -ClassName Win32_Process -MethodName Create -Arguments @{
+            CommandLine = "git -C `"$dir`" fetch --quiet"
+        } -ErrorAction SilentlyContinue
+    }
+    $behind = git -C $dir rev-list --count "HEAD..@{u}" 2>$null
+    if ($behind -match '^[1-9]') { return " $esc[33mupdate available$off$dim - run: git -C `"$dir`" pull$off" }
+    ""
+}
+
 # Top line = labels/details (l2), bottom line = bars (l1)
-if ((Get-VLen ($l2 -join "")) -gt 0) { Write-Host ($l2 -join $sep) }
+if ((Get-VLen ($l2 -join "")) -gt 0) { Write-Host (($l2 -join $sep) + (Get-UpdateNotice)) }
 if ((Get-VLen ($l1 -join "")) -gt 0) { Write-Host ($l1 -join $sep) }

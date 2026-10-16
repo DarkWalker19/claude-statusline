@@ -140,6 +140,27 @@ for i in "${!top[@]}"; do
     l2+=$b
 done
 
+# Update check: only when this script lives in a git clone with an upstream.
+# Fetches in the background at most every 6 hours (never pulls) and just compares commits.
+# Opt out with the STATUSLINE_NO_UPDATE_CHECK environment variable.
+update_notice() {
+    [[ -n $STATUSLINE_NO_UPDATE_CHECK ]] && return
+    command -v git >/dev/null 2>&1 || return
+    local dir git_dir stamp behind
+    dir=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd) || return
+    git_dir=$(git -C "$dir" rev-parse --absolute-git-dir 2>/dev/null) || return
+    stamp="$git_dir/statusline-update-check"
+    if [[ -z $(find "$stamp" -mmin -360 2>/dev/null) ]]; then
+        : >"$stamp"   # stamp first so parallel refreshes don't pile up fetches
+        GIT_TERMINAL_PROMPT=0 git -C "$dir" fetch --quiet </dev/null >/dev/null 2>&1 &
+        disown 2>/dev/null
+    fi
+    behind=$(git -C "$dir" rev-list --count 'HEAD..@{u}' 2>/dev/null)
+    if [[ $behind =~ ^[1-9] ]]; then
+        printf ' %s[33mupdate available%s%s - run: git -C "%s" pull%s' "$esc" "$off" "$dim" "$dir" "$off"
+    fi
+}
+
 # Top line = labels/details, bottom line = bars
-(($(vlen "$(sed -e "s/ //g" -e "s/|//g" <<<"$l1")") > 0)) && printf '%s\n' "$l1"
+(($(vlen "$top_text") > 0)) && printf '%s%s\n' "$l1" "$(update_notice)"
 printf '%s\n' "$l2"

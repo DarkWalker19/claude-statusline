@@ -63,6 +63,14 @@ Alternative: run `/statusline` in Claude Code and ask it to use the script.
 
 ## Updates
 
+If you installed from a git clone, the status line tells you when a newer version is available: a yellow `update available - run: git -C <folder> pull` appears at the end of the top line.
+
+- It runs `git fetch` in the background at most every 6 hours (it never pulls or changes your files) and compares commits locally. It does nothing if the script isn't in a git clone with an upstream branch.
+- The fetch contacts the repo's remote (e.g. GitHub). To turn the check off, set the environment variable `STATUSLINE_NO_UPDATE_CHECK=1` (for example in the `env` section of `settings.json`).
+- The timestamp is stored in `.git/statusline-update-check`. Delete it to force a check on the next refresh.
+
+To apply an update:
+
 - **Manually:** `git -C ~/claude-statusline pull`
 - **Automatically when Claude Code starts:** add a `SessionStart` hook to `settings.json`:
 
