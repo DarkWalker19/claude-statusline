@@ -1,4 +1,5 @@
 [Console]::OutputEncoding = [System.Text.Encoding]::UTF8
+[Console]::InputEncoding = [System.Text.Encoding]::UTF8
 $raw = [Console]::In.ReadToEnd()
 try { $j = $raw | ConvertFrom-Json } catch { Write-Host "statusline: bad input"; exit }
 
@@ -31,7 +32,7 @@ function Get-Countdown($t) {
     $left = $t - [datetimeoffset]::UtcNow
     if ($left.TotalSeconds -le 0) { return " ~0m" }
     $in = if ($left.TotalHours -ge 24) { "{0}d{1}h" -f [int]$left.Days, $left.Hours }
-          elseif ($left.TotalHours -ge 1) { "{0}h{1:00}m" -f [int]$left.TotalHours, $left.Minutes }
+          elseif ($left.TotalHours -ge 1) { "{0}h{1:00}m" -f [int][math]::Floor($left.TotalHours), $left.Minutes }
           else { "{0}m" -f [int][math]::Ceiling($left.TotalMinutes) }
     " $dim$in$off"
 }
@@ -89,22 +90,34 @@ for ($i = 0; $i -lt $cols.Count; $i++) {
 # Fetches in the background at most every 6 hours (never pulls) and just compares commits.
 # Opt out with the STATUSLINE_NO_UPDATE_CHECK environment variable.
 function Get-UpdateNotice {
-    if ($env:STATUSLINE_NO_UPDATE_CHECK -or -not (Get-Command git -ErrorAction SilentlyContinue)) { return "" }
-    $dir = $PSScriptRoot
-    $gitDir = git -C $dir rev-parse --absolute-git-dir 2>$null
-    if (-not $gitDir) { return "" }
-    $stamp = Join-Path $gitDir "statusline-update-check"
-    $item = Get-Item $stamp -ErrorAction SilentlyContinue
-    if (-not $item -or ((Get-Date) - $item.LastWriteTime).TotalHours -ge 6) {
-        [IO.File]::WriteAllText($stamp, "")   # stamp first so parallel refreshes don't pile up fetches
-        # Launched via WMI so the fetch is fully detached: a child started with Start-Process
-        # inherits our stdout pipe and Claude Code would wait for it to finish.
-        $null = Invoke-CimMethod -ClassName Win32_Process -MethodName Create -Arguments @{
-            CommandLine = "git -C `"$dir`" fetch --quiet"
-        } -ErrorAction SilentlyContinue
-    }
-    $behind = git -C $dir rev-list --count "HEAD..@{u}" 2>$null
-    if ($behind -match '^[1-9]') { return " $esc[33mupdate available$off$dim - run: git -C `"$dir`" pull$off" }
+    try {
+        if ($env:STATUSLINE_NO_UPDATE_CHECK) { return "" }
+        $gitExe = (Get-Command git -ErrorAction SilentlyContinue).Source
+        if (-not $gitExe) { return "" }
+        $dir = $PSScriptRoot
+        $gitDir = & $gitExe -C $dir rev-parse --absolute-git-dir 2>$null
+        if (-not $gitDir) { return "" }
+
+        # update.ps1 / update.sh create this marker while they pull
+        $busy = Get-Item (Join-Path $gitDir "statusline-updating") -ErrorAction SilentlyContinue
+        if ($busy -and ((Get-Date) - $busy.LastWriteTime).TotalMinutes -lt 2) { return " $esc[33mUpdating...$off" }
+
+        $stamp = Join-Path $gitDir "statusline-update-check"
+        $item = Get-Item $stamp -ErrorAction SilentlyContinue
+        if (-not $item -or ((Get-Date) - $item.LastWriteTime).TotalHours -ge 6) {
+            [IO.File]::WriteAllText($stamp, "")   # stamp first so parallel refreshes don't pile up fetches
+            # Launched via WMI so the fetch is fully detached: a child started with Start-Process
+            # inherits our stdout pipe and Claude Code would wait for it to finish.
+            # ShowWindow = 0 (SW_HIDE) keeps the console window of git.exe from appearing.
+            $startup = New-CimInstance -ClassName Win32_ProcessStartup -ClientOnly -Property @{ ShowWindow = [uint16]0 }
+            $null = Invoke-CimMethod -ClassName Win32_Process -MethodName Create -Arguments @{
+                CommandLine = "`"$gitExe`" -c credential.interactive=never -c core.askPass= -C `"$dir`" fetch --quiet"
+                ProcessStartupInformation = $startup
+            } -ErrorAction SilentlyContinue
+        }
+        $behind = & $gitExe -C $dir rev-list --count "HEAD..@{u}" 2>$null
+        if ($behind -match '^[1-9]') { return " $esc[33mupdate available$off$dim - run: /statusline-update$off" }
+    } catch { }
     ""
 }
 

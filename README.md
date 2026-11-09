@@ -5,7 +5,7 @@ Two-line status line with usage progress bars, color-coded by how high usage is.
 | Platform | Script | Needs |
 |----------|--------|-------|
 | Windows | `statusline.ps1` | PowerShell 7 (`pwsh`) |
-| Linux / macOS / WSL | `statusline.sh` | `bash`, `jq` |
+| Linux / macOS / WSL | `statusline.sh` | `bash`, `jq`, `awk`, `sed`, `find`, `date` |
 
 ```
 Sonnet 5.5          | session resets 19:12  | week resets Mon 16:59
@@ -63,14 +63,15 @@ Alternative: run `/statusline` in Claude Code and ask it to use the script.
 
 ## Updates
 
-If you installed from a git clone, the status line tells you when a newer version is available: a yellow `update available - run: git -C <folder> pull` appears at the end of the top line.
+If you installed from a git clone, the status line tells you when a newer version is available: a yellow `update available - run: /statusline-update` appears at the end of the top line.
 
-- It runs `git fetch` in the background at most every 6 hours (it never pulls or changes your files) and compares commits locally. It does nothing if the script isn't in a git clone with an upstream branch.
+- It runs `git fetch` silently in the background (no window, no prompts) at most every 6 hours. It never pulls on its own and compares commits locally. It does nothing if the script isn't in a git clone with an upstream branch.
 - The fetch contacts the repo's remote (e.g. GitHub). To turn the check off, set the environment variable `STATUSLINE_NO_UPDATE_CHECK=1` (for example in the `env` section of `settings.json`).
 - The timestamp is stored in `.git/statusline-update-check`. Delete it to force a check on the next refresh.
 
 To apply an update:
 
+- **With a prompt (recommended):** install the slash command once by copying `commands/statusline-update.md` to `~/.claude/commands/` (or `<CLAUDE_CONFIG_DIR>/commands/`). Then run `/statusline-update` in Claude Code. Claude asks for your permission before running `update.ps1` / `update.sh`, which does `git pull --ff-only`. The status line shows `Updating...` while it runs. Restart Claude Code afterwards.
 - **Manually:** `git -C ~/claude-statusline pull`
 - **Automatically when Claude Code starts:** add a `SessionStart` hook to `settings.json`:
 

@@ -150,6 +150,11 @@ update_notice() {
     dir=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd) || return
     git_dir=$(git -C "$dir" rev-parse --absolute-git-dir 2>/dev/null) || return
     stamp="$git_dir/statusline-update-check"
+    # update.sh / update.ps1 create this marker while they pull
+    if [[ -n $(find "$git_dir/statusline-updating" -mmin -2 2>/dev/null) ]]; then
+        printf ' %s[33mUpdating...%s' "$esc" "$off"
+        return
+    fi
     if [[ -z $(find "$stamp" -mmin -360 2>/dev/null) ]]; then
         : >"$stamp"   # stamp first so parallel refreshes don't pile up fetches
         GIT_TERMINAL_PROMPT=0 git -C "$dir" fetch --quiet </dev/null >/dev/null 2>&1 &
@@ -157,7 +162,7 @@ update_notice() {
     fi
     behind=$(git -C "$dir" rev-list --count 'HEAD..@{u}' 2>/dev/null)
     if [[ $behind =~ ^[1-9] ]]; then
-        printf ' %s[33mupdate available%s%s - run: git -C "%s" pull%s' "$esc" "$off" "$dim" "$dir" "$off"
+        printf ' %s[33mupdate available%s%s - run: /statusline-update%s' "$esc" "$off" "$dim" "$off"
     fi
 }
 
